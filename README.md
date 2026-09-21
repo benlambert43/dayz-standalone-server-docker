@@ -1,3 +1,9 @@
+
+<img width="2559" height="998" alt="test123" src="https://github.com/user-attachments/assets/70c56103-298f-49cf-b5b8-9052910c01e1" />
+
+<img width="2536" height="1219" alt="test1234" src="https://github.com/user-attachments/assets/3d88116c-36f3-45f4-9dec-a02e9a8a8f9b" />
+
+
 # dayz-standalone-server-docker
 
 A DayZ Standalone dedicated server (Bohemia's native Linux build) that installs, configures
