@@ -1,0 +1,41 @@
+{
+  "_comment": [
+    "A suggested looting circuit: the north-west military sites, then east and down the coast.",
+    "",
+    "A route is a list of places to walk between, which is a plan rather than a picture. This",
+    "one is written here from the town positions in places.json, so it is as approximate as they",
+    "are - it shows which way to go, not where to put your feet.",
+    "",
+    "Edit the points, or add a second line with its own colour, to describe your own server's",
+    "run. A dashed line reads as an alternative rather than the main way round."
+  ],
+  "lines": [
+    {
+      "label": "north-west run",
+      "colour": "#e8593f",
+      "width": 2.6,
+      "points": [
+        [1700, 14100], [4000, 10900], [3180, 9460], [3920, 8800], [5680, 8260],
+        [6670, 8230], [8050, 7030], [9940, 5650], [11100, 5680], [11930, 3670],
+        [12690, 4560], [13280, 6630], [12710, 8580], [11860, 9640], [12150, 11410]
+      ]
+    },
+    {
+      "label": "inland shortcut",
+      "colour": "#d8d2c4",
+      "width": 1.8,
+      "dash": [9, 7],
+      "points": [
+        [4000, 10900], [5460, 10940], [9320, 9460], [11860, 9640]
+      ]
+    }
+  ],
+  "circles": [
+    { "label": "Tisy base", "colour": "#4fd2ff", "at": [1700, 14100], "radius": 700 },
+    { "label": "NW airfield", "colour": "#4fd2ff", "at": [4000, 10900], "radius": 750 },
+    { "label": "Vybor military", "colour": "#4fd2ff", "at": [3920, 8800], "radius": 450 },
+    { "label": "Stary Sobor", "colour": "#4fd2ff", "at": [5680, 8260], "radius": 420 },
+    { "label": "Berezino", "colour": "#4fd2ff", "at": [11860, 9640], "radius": 600 },
+    { "label": "Solnichniy", "colour": "#4fd2ff", "at": [13280, 6630], "radius": 520 }
+  ]
+}

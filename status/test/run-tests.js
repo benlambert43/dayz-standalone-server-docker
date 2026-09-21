@@ -16,9 +16,13 @@ import { summariseRpt, parseRptHeader, classifyRptLine, parseLoadedAddons, findD
 import { evaluate } from '../src/health.js';
 import { summariseStats } from '../src/dockerapi.js';
 import { parseServerCfgValues, appManifest, installedMods, modsFromArgs, countListEntries } from '../src/mission.js';
+import { listOverlays, resolveOverlay, resolveBounds, readShapes } from '../src/overlays.js';
 import fsp from 'node:fs/promises';
 import os from 'node:os';
 import path from 'node:path';
+import { fileURLToPath } from 'node:url';
+
+const HERE = path.dirname(fileURLToPath(import.meta.url));
 
 let pass = 0, fail = 0, group = '';
 const section = (s) => { group = s; console.log(`\n${s}`); };
@@ -704,12 +708,16 @@ const EXTRAS = {
     assert.equal(r.status, 'warn');
     assert.match(r.hint, /init\.c/);
   });
-  check('a build with empty names falls back to the admin log and says so', () => {
+  // DayZ always answers with blank names. That used to be a warning, which made the page read
+  // "warn" whenever somebody was online.
+  check('blank player names are normal for DayZ: ok, and it says where the names come from', () => {
     const s = clone(HEALTHY);
     s.query.players = { ok: true, count: 3, named: 0 };
     const r = run(s).get('query.players');
-    assert.equal(r.status, 'warn');
-    assert.match(r.detail, /hides them/);
+    assert.equal(r.status, 'ok');
+    assert.match(r.detail, /names left blank/);
+    assert.match(r.hint, /admin log/);
+    assert.equal(run(s).h.overall, 'ok');
   });
   // The defect this check exists for: every client was kicked, the container was healthy, and
   // nothing on the page said a word.
@@ -873,6 +881,150 @@ class Missions
   });
   check('CRLF line endings count the same', () => {
     assert.equal(countListEntries('//note\r\n76561198120341761\r\n76561198956764064\r\n'), 2);
+  });
+}
+
+// ------------------------------------------------------------- 12. overlays ---
+section('12. Map overlays');
+{
+  const files = new Map([
+    ['places.json', 'places.json'],
+    ['chernarus-terrain.jpg', 'Chernarus-Terrain.JPG'],
+    ['tiers.webp', 'tiers.webp'],
+    ['notes.txt', 'notes.txt'],
+  ]);
+  const at = (entry, world = 'chernarusplus') => resolveOverlay(entry, { world, size: 15360, files });
+
+  // --- drawn layers, which is everything this repository ships -----------------
+  check('a shapes entry is a drawn layer, with no url and no bounds', () => {
+    const o = at({ id: 'places', label: 'places', shapes: 'places.json' });
+    assert.equal(o.kind, 'shapes');
+    assert.equal(o.shapes, 'places.json');
+    assert.equal(o.url, undefined);
+    assert.equal(o.bounds, undefined);
+  });
+  check('a shapes entry must name a json file', () => {
+    assert.equal(at({ shapes: 'places.png' }), null);
+  });
+  check('shapes win over file when an entry confusingly has both', () => {
+    assert.equal(at({ shapes: 'places.json', file: 'tiers.webp' }).kind, 'shapes');
+  });
+
+  // --- picture layers, for anyone who brings their own render ------------------
+  check('places a full-map render over the whole world', () => {
+    const o = at({ id: 'terrain', file: 'chernarus-terrain.jpg', bounds: 'world' });
+    assert.equal(o.kind, 'image');
+    assert.deepEqual(o.bounds, [0, 0, 15360, 15360]);
+  });
+  check('serves the name on disk, not the one the manifest guessed at', () => {
+    // A container's filesystem is case sensitive; the person editing the JSON cannot tell.
+    assert.equal(at({ file: 'chernarus-terrain.jpg' }).url, '/overlays/Chernarus-Terrain.JPG');
+  });
+  check('drops an entry whose file is not there', () => {
+    assert.equal(at({ file: 'missing.png' }), null);
+  });
+  check('drops a file that is not an image', () => {
+    assert.equal(at({ file: 'notes.txt' }), null);
+  });
+  check('refuses a path instead of a file name', () => {
+    assert.equal(at({ file: '../src/server.js' }), null);
+    assert.equal(at({ file: 'sub/dir.png' }), null);
+    assert.equal(at({ shapes: '../../package.json' }), null);
+  });
+  check('hides a layer that belongs to another world', () => {
+    assert.equal(at({ file: 'tiers.webp', world: 'chernarusplus' }, 'enoch'), null);
+    assert.ok(at({ file: 'tiers.webp', world: 'enoch' }, 'enoch'));
+    assert.ok(at({ file: 'tiers.webp', world: '*' }, 'enoch'));
+  });
+  check('offers every layer while the world is still unknown', () => {
+    assert.ok(at({ file: 'tiers.webp', world: 'chernarusplus' }, null));
+  });
+  check('clamps opacity and defaults the rest', () => {
+    const o = at({ file: 'tiers.webp', opacity: 4 });
+    assert.equal(o.opacity, 1);
+    assert.equal(at({ file: 'tiers.webp', opacity: 'x' }).opacity, 0.8);
+    assert.equal(o.on, false);
+    assert.equal(o.id, 'tiers');
+  });
+
+  check('bounds fall back to the whole world when they make no sense', () => {
+    assert.deepEqual(resolveBounds('world', 900), [0, 0, 900, 900]);
+    assert.deepEqual(resolveBounds([0, 0, 1], 900), [0, 0, 900, 900]);
+    assert.deepEqual(resolveBounds([0, 0, 'x', 5], 900), [0, 0, 900, 900]);
+    assert.deepEqual(resolveBounds([10, 10, 10, 800], 900), [0, 0, 900, 900]);
+  });
+  check('bounds given inside out are turned the right way round', () => {
+    assert.deepEqual(resolveBounds([8000, 9000, 2000, 1000], 15360), [2000, 1000, 8000, 9000]);
+  });
+  check('a crop keeps the rectangle it was given', () => {
+    assert.deepEqual(resolveBounds([7680, 7680, 15360, 15360], 15360), [7680, 7680, 15360, 15360]);
+  });
+
+  // --- reading a hand-edited shapes file --------------------------------------
+  check('a shapes file keeps only what can be drawn', () => {
+    const g = readShapes({
+      _comment: ['notes for whoever edits this'],
+      areas: [
+        { label: 'Tier 1', colour: '#4f9d6a', polygon: [[0, 0], [10, 0], [10, 10]] },
+        { label: 'too few corners', polygon: [[0, 0], [1, 1]] },
+      ],
+      circles: [{ label: 'Tisy', at: [100, 200], radius: 50 }, { at: [1, 2], radius: 0 }],
+      lines: [{ points: [[0, 0], [5, 5]], width: 99, dash: [4, 3] }],
+      points: [{ label: 'Gorka', at: [9320, 9460] }, { label: 'nowhere' }],
+      nonsense: [{ boom: true }],
+    });
+    assert.equal(g.areas.length, 1, 'a polygon needs three corners');
+    assert.equal(g.circles.length, 1, 'a circle needs a radius');
+    assert.equal(g.points.length, 1, 'a point needs a position');
+    assert.equal(g.lines[0].width, 8, 'line width is capped');
+    assert.deepEqual(g.lines[0].dash, [4, 3]);
+    assert.equal(g.points[0].class, 'village', 'a point without a class still gets one');
+    assert.equal(g.nonsense, undefined, 'only known keys reach the browser');
+    assert.equal(g._comment, undefined, 'and the file comments do not');
+  });
+  check('a colour is a plain hex value or nothing at all', () => {
+    // Drawn straight into a canvas fillStyle, so nothing clever is allowed through.
+    const g = readShapes({ areas: [{ colour: 'url(#x)', polygon: [[0, 0], [1, 0], [1, 1]] }] });
+    assert.equal(g.areas[0].colour, null);
+    assert.equal(readShapes({ areas: [{ colour: '#ABCDEF', polygon: [[0, 0], [1, 0], [1, 1]] }] }).areas[0].colour, '#ABCDEF');
+  });
+  check('a shapes file with nothing drawable in it is no layer', () => {
+    assert.equal(readShapes({ areas: [], points: [] }), null);
+    assert.equal(readShapes(null), null);
+    assert.equal(readShapes('places'), null);
+  });
+
+  // --- the folder as shipped ---------------------------------------------------
+  await acheck('every shipped layer is drawn, so no map imagery is served', async () => {
+    const dir = path.join(HERE, '..', 'public', 'overlays');
+    const list = await listOverlays(dir, { world: 'chernarusplus', size: 15360 });
+    assert.ok(list.length >= 3, `expected the shipped overlays, got ${list.length}`);
+    for (const o of list) {
+      assert.equal(o.kind, 'shapes', `${o.id} must be drawn, not a picture`);
+      assert.ok(o.geometry, `${o.id} should carry its geometry inline`);
+      assert.equal(o.on, false, 'nothing may be on by default: the drawn map is the map');
+    }
+    assert.equal(new Set(list.map((o) => o.id)).size, list.length, 'ids must be unique');
+    const names = await fsp.readdir(dir);
+    assert.deepEqual(names.filter((n) => !n.endsWith('.json')), [], 'the folder ships json and nothing else');
+  });
+  await acheck('the shipped geometry is inside the world', async () => {
+    const dir = path.join(HERE, '..', 'public', 'overlays');
+    const list = await listOverlays(dir, { world: 'chernarusplus', size: 15360 });
+    const every = [];
+    for (const o of list) {
+      for (const a of o.geometry.areas) every.push(...a.polygon);
+      for (const c of o.geometry.circles) every.push(c.at);
+      for (const l of o.geometry.lines) every.push(...l.points);
+      for (const p of o.geometry.points) every.push(p.at);
+    }
+    assert.ok(every.length > 60, `expected a populated set of shapes, got ${every.length}`);
+    for (const [x, z] of every) {
+      assert.ok(x >= 0 && x <= 15360 && z >= 0 && z <= 15360, `${x},${z} is off the map`);
+    }
+  });
+  await acheck('a folder that is not there is simply no overlays', async () => {
+    assert.deepEqual(await listOverlays(path.join(HERE, 'no-such-folder'), { size: 15360 }), []);
   });
 }
 

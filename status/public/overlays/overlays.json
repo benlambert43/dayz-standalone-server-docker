@@ -1,0 +1,59 @@
+{
+  "_comment": [
+    "Layers the live map can draw on top of itself. Two kinds, and an entry is one or the other.",
+    "",
+    "A DRAWN layer names a shapes file in this folder: polygons, circles, lines and labelled",
+    "points, all in world metres. Everything shipped here is drawn, so the page still contains no",
+    "map imagery of any kind.",
+    "",
+    "  { \"id\": \"places\", \"label\": \"places\", \"shapes\": \"places.json\" }",
+    "",
+    "A PICTURE layer names an image instead, placed by the world rectangle it covers. Nothing",
+    "ships as a picture, but the support is here for your own terrain render or screenshot: drop",
+    "the file in this folder and it is offered straight away, stretched across the whole world.",
+    "Give it an entry to place it properly.",
+    "",
+    "  { \"id\": \"terrain\", \"label\": \"terrain\", \"file\": \"terrain.png\",",
+    "    \"bounds\": [7680, 7680, 15360, 15360] }",
+    "",
+    "Shared keys:",
+    "  id       stable key, also how the page remembers this layer's opacity.",
+    "  label    what the chip in the toolbar says.",
+    "  world    only offer the layer on this world (see src/world.js for the names). Omit or use",
+    "           \"*\" for every world. While the mission has not been read the layer is offered.",
+    "  bounds   pictures only: [xWest, zSouth, xEast, zNorth] in metres, or \"world\" for the whole",
+    "           square. The image's top row is north.",
+    "  opacity  0 to 1, where the layer starts. The page remembers what you set.",
+    "  on       true to have the layer enabled the first time someone opens the map.",
+    "  credit   shown under the map while the layer is on."
+  ],
+  "overlays": [
+    {
+      "id": "places",
+      "label": "places",
+      "shapes": "places.json",
+      "world": "chernarusplus",
+      "opacity": 0.9,
+      "on": false,
+      "credit": "place names approximate to a few hundred metres"
+    },
+    {
+      "id": "loot-tiers",
+      "label": "loot tiers",
+      "shapes": "loot-tiers.json",
+      "world": "chernarusplus",
+      "opacity": 0.55,
+      "on": false,
+      "credit": "loot tiers sketched by hand, not read from the economy"
+    },
+    {
+      "id": "loot-run",
+      "label": "loot run",
+      "shapes": "loot-run.json",
+      "world": "chernarusplus",
+      "opacity": 0.85,
+      "on": false,
+      "credit": "a suggested route, not a measured one"
+    }
+  ]
+}

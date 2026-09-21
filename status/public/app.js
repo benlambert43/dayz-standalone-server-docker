@@ -398,44 +398,131 @@ tab('events', 'Events', async (view) => {
 });
 
 // --------------------------------------------------------------------- map ---
+// Which layers are on, how bright each picture overlay is and how far the picture is dimmed
+// are a viewing preference, not server state, so they live in the browser and survive both a
+// reload and a tab switch.
+const MAP_LAYERS = { players: true, deaths: true, spawns: false, areas: true, basemap: true, trails: false };
+const MAP_PREFS = 'dayz-status-map';
+const pct = (v) => `${Math.round(v * 100)}%`;
+
+function mapPrefs() {
+  try { return JSON.parse(localStorage.getItem(MAP_PREFS)) || {}; } catch { return {}; }
+}
+function saveMapPrefs(state) {
+  const keep = { overlay: state.overlay, opacity: state.opacity, dim: state.dim };
+  for (const k of Object.keys(MAP_LAYERS)) keep[k] = state[k];
+  try { localStorage.setItem(MAP_PREFS, JSON.stringify(keep)); } catch { /* private mode */ }
+}
+
 tab('map', 'Map', async (view) => {
-  const data = await api('/api/map');
+  const [data, picture] = await Promise.all([
+    api('/api/map'),
+    api('/api/map/overlays').catch(() => ({ overlays: [] })),
+  ]);
   if (!data.ok) { view.innerHTML = card('Map', `<div class="empty">${esc(data.error)}</div>`); return; }
-  const layers = { players: true, deaths: true, spawns: false, areas: true, buildings: true, trails: false };
+  data.overlays = picture.overlays || [];
+
+  const prefs = mapPrefs();
+  const state = { ...MAP_LAYERS, overlay: {}, opacity: {}, dim: 0.35, zoom: 1, panX: 0, panY: 0 };
+  for (const k of Object.keys(MAP_LAYERS)) if (typeof prefs[k] === 'boolean') state[k] = prefs[k];
+  if (Number.isFinite(prefs.dim)) state.dim = Math.min(1, Math.max(0, prefs.dim));
+  for (const o of data.overlays) {
+    state.overlay[o.id] = typeof prefs.overlay?.[o.id] === 'boolean' ? prefs.overlay[o.id] : o.on;
+    state.opacity[o.id] = Number.isFinite(prefs.opacity?.[o.id]) ? prefs.opacity[o.id] : o.opacity;
+  }
+
+  const chip = (key, on, attr) => html`<button class="chip ${raw(on ? 'on' : '')}" ${raw(attr)}="${key}">${key}</button>`;
+  const overlayBar = data.overlays.length
+    ? `<div class="toolbar sub">
+        <span class="toolbar-label">overlays</span>
+        <span class="chips" id="overlays">${data.overlays.map((o) =>
+          html`<button class="chip ${raw(state.overlay[o.id] ? 'on' : '')}" data-overlay="${o.id}">${o.label}</button>`).join('')}</span>
+      </div>`
+    : '';
+
   view.innerHTML = `<div class="toolbar">
-      <span class="chips" id="layers">${Object.keys(layers).map((k) => html`<button class="chip ${raw(layers[k] ? 'on' : '')}" data-layer="${k}">${k}</button>`).join('')}</span>
+      <span class="chips" id="layers">${Object.keys(MAP_LAYERS).map((k) => chip(k, state[k], 'data-layer')).join('')}</span>
       <span class="spacer"></span>
       <button id="fit" class="ghost">Reset view</button>
     </div>
+    ${overlayBar}
     ${card(`${data.world.label} \u00b7 ${data.world.size} m`, `
       <div class="mapwrap">
         <canvas id="map" width="1400" height="1400"></canvas>
         <div class="maphud" id="hud">move the pointer over the map</div>
       </div>
+      <div class="mapsliders" id="sliders"></div>
       <div class="maplegend">
-        <span><i style="background:#8fbc6a"></i>player</span>
-        <span><i style="background:#d96a5f"></i>death</span>
-        <span><i style="background:#c8a24a"></i>spawn point</span>
-        <span><i style="background:#9b6ad9"></i>effect area</span>
-        <span><i style="background:#3d5545"></i>buildings</span>
+        <span><i class="sw dot" style="--c:#a8ff5e"></i>player</span>
+        <span><i class="sw cross" style="--c:#ff5347"></i>death</span>
+        <span><i class="sw diamond" style="--c:#ffc531"></i>spawn point</span>
+        <span><i class="sw ring" style="--c:#c88bff"></i>effect area</span>
+        <span><i class="sw block" style="--c:#5d7e65"></i>buildings</span>
         <span>drag to pan, wheel to zoom, click twice to measure</span>
       </div>`, { flush: true })}
-    <p class="note">The background is not a map image: it is drawn from the world positions in the mission's own
-    <code>mapgrouppos.xml</code>, so towns and industrial areas appear as denser clusters. Player positions come from the
-    newest lines of the admin log, so a player who has not triggered a logged event for a while shows their last known spot.</p>`;
+    <p class="note" id="mapnote"></p>`;
 
   const canvas = $('#map');
-  const state = { ...layers, zoom: 1, panX: 0, panY: 0 };
   const redraw = () => drawMap(canvas, data, state);
+  state.onOverlayLoad = redraw;
   attachMapInteraction(canvas, data, state, redraw, $('#hud'));
+
+  // One slider per layer that is switched on, plus the dim control - which only earns its
+  // place when a picture layer is showing, because it has nothing to dim otherwise. Rebuilt
+  // only when a chip is clicked, so dragging a slider keeps its grip.
+  const controls = () => {
+    const on = data.overlays.filter((o) => state.overlay[o.id]);
+    const dimmable = on.some((o) => o.kind === 'image');
+    $('#sliders').innerHTML = on.length ? on.map((o) => html`<label class="slider">
+        <span class="name">${o.label}</span>
+        <input type="range" min="0" max="100" step="1" value="${Math.round(state.opacity[o.id] * 100)}" data-opacity="${o.id}">
+        <span class="val">${pct(state.opacity[o.id])}</span>
+      </label>`).join('') + (dimmable ? html`<label class="slider">
+        <span class="name">dim picture</span>
+        <input type="range" min="0" max="80" step="1" value="${Math.round(state.dim * 100)}" id="dim">
+        <span class="val">${pct(state.dim)}</span>
+      </label>` : '') : '';
+    const credits = on.map((o) => o.credit).filter(Boolean);
+    $('#mapnote').innerHTML = (credits.length ? html`${credits.join('; ')}. ` : '')
+      + `Overlays are files in <code>status/public/overlays</code>: the ones shipped here are drawn from lists of world
+        coordinates rather than being map images, so the page still carries no map imagery. Drop an image in that folder
+        and it is offered as a layer too.`
+      + ` The background is drawn as well, from the world positions in the mission's own
+        <code>mapgrouppos.xml</code>, so towns and industrial areas appear as denser clusters. Player positions come from
+        the newest lines of the admin log, so a player who has not triggered a logged event for a while shows their last
+        known spot.`;
+  };
+
   $('#layers').addEventListener('click', (ev) => {
     const b = ev.target.closest('[data-layer]');
     if (!b) return;
     state[b.dataset.layer] = !state[b.dataset.layer];
     b.classList.toggle('on', state[b.dataset.layer]);
+    saveMapPrefs(state);
+    redraw();
+  });
+  $('#overlays')?.addEventListener('click', (ev) => {
+    const b = ev.target.closest('[data-overlay]');
+    if (!b) return;
+    const id = b.dataset.overlay;
+    state.overlay[id] = !state.overlay[id];
+    b.classList.toggle('on', state.overlay[id]);
+    controls();
+    saveMapPrefs(state);
+    redraw();
+  });
+  $('#sliders').addEventListener('input', (ev) => {
+    const el = ev.target;
+    if (el.id === 'dim') state.dim = Number(el.value) / 100;
+    else if (el.dataset.opacity) state.opacity[el.dataset.opacity] = Number(el.value) / 100;
+    else return;
+    el.parentElement.querySelector('.val').textContent = `${el.value}%`;
+    saveMapPrefs(state);
     redraw();
   });
   $('#fit').addEventListener('click', () => { state.zoom = 1; state.panX = 0; state.panY = 0; redraw(); });
+
+  controls();
   redraw();
 });
 
@@ -823,7 +910,7 @@ tab('about', 'About', async (view) => {
     ${card('Settings', kv(Object.entries(settings).map(([k, v]) => [k, Array.isArray(v) ? v.join(' - ') : String(v)])))}
 
     ${card('Endpoints', `<p class="note">Everything on this page is also available as JSON, and the numbers as Prometheus metrics.</p>
-      ${['/api/summary', '/api/health', '/api/players', '/api/chat', '/api/events', '/api/map', '/api/missions', '/api/economy',
+      ${['/api/summary', '/api/health', '/api/players', '/api/chat', '/api/events', '/api/map', '/api/map/overlays', '/api/missions', '/api/economy',
          '/api/mods', '/api/config', '/api/storage', '/api/logs', '/api/docker', '/api/history', '/api/query', '/api/stream', '/metrics', '/healthz']
         .map((p) => `<div><a href="${p}" target="_blank" rel="noreferrer"><code>${p}</code></a></div>`).join('')}`)}
 

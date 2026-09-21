@@ -1,0 +1,51 @@
+{
+  "_comment": [
+    "Roughly where each loot tier sits on Chernarus, as world coordinates in metres.",
+    "",
+    "Tiers are a property of the economy the server runs, not of any map picture: a building",
+    "group's tier decides which entries in types.xml can spawn in it. What is drawn here is a",
+    "coarse, hand-written approximation of the vanilla arrangement - coast low, inland higher,",
+    "the north-west military sites highest - meant for orientation, not for auditing an economy.",
+    "The boundaries below are deliberately smooth and are nobody's survey of the real ones.",
+    "",
+    "Each area is a polygon; the four tile the map, so edit one edge and the neighbour keeps up",
+    "only if you edit its matching vertices too. labelAt places the name where the shape is",
+    "widest, because a centroid lands badly on a shape this long."
+  ],
+  "areas": [
+    {
+      "label": "Tier 1",
+      "colour": "#4f9d6a",
+      "labelAt": [11500, 3500],
+      "polygon": [
+        [0, 3600], [2400, 3700], [4600, 4200], [6800, 4600], [9000, 4500], [10800, 5000],
+        [12100, 5600], [12800, 7200], [13400, 8800], [15360, 9200], [15360, 0], [0, 0]
+      ]
+    },
+    {
+      "label": "Tier 2",
+      "colour": "#3f7fb8",
+      "labelAt": [8800, 7600],
+      "polygon": [
+        [0, 7200], [1800, 7600], [3200, 8600], [4400, 9600], [5200, 10800], [6000, 12200],
+        [6600, 13600], [7000, 15360], [15360, 15360], [15360, 9200], [13400, 8800],
+        [12800, 7200], [12100, 5600], [10800, 5000], [9000, 4500], [6800, 4600],
+        [4600, 4200], [2400, 3700], [0, 3600]
+      ]
+    },
+    {
+      "label": "Tier 3",
+      "colour": "#8f6bd0",
+      "labelAt": [2700, 11000],
+      "polygon": [
+        [0, 7200], [1800, 7600], [3200, 8600], [4400, 9600], [5200, 10800], [6000, 12200],
+        [6600, 13600], [7000, 15360], [0, 15360]
+      ]
+    }
+  ],
+  "circles": [
+    { "label": "Tier 4 · Tisy", "colour": "#d8a531", "at": [1700, 14100], "radius": 1000 },
+    { "label": "Tier 4 · NW airfield", "colour": "#d8a531", "at": [4000, 10900], "radius": 950 },
+    { "label": "Tier 4 · Vybor military", "colour": "#d8a531", "at": [3920, 8800], "radius": 600 }
+  ]
+}

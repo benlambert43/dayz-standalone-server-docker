@@ -13,16 +13,19 @@ import { evaluate } from './health.js';
 import * as a2s from './a2s.js';
 import * as logs from './logs.js';
 import * as mission from './mission.js';
+import { listOverlays, IMAGE_TYPES } from './overlays.js';
 import { safe, readTail, readCapped, human, duration, KB, MB } from './util.js';
 
 const HERE = path.dirname(fileURLToPath(import.meta.url));
 const PUBLIC = path.join(HERE, '..', 'public');
+const OVERLAYS = path.join(PUBLIC, 'overlays');
 const collector = new Collector();
 
 const MIME = {
   '.html': 'text/html; charset=utf-8', '.js': 'text/javascript; charset=utf-8',
-  '.css': 'text/css; charset=utf-8', '.svg': 'image/svg+xml', '.json': 'application/json; charset=utf-8',
+  '.css': 'text/css; charset=utf-8', '.json': 'application/json; charset=utf-8',
   '.ico': 'image/x-icon', '.webmanifest': 'application/manifest+json',
+  ...IMAGE_TYPES,
 };
 
 // Player and Steam IDs are personal data. The page is bound to localhost, but a screenshot
@@ -57,12 +60,12 @@ function send(res, status, body, headers = {}) {
 const json = (res, data, status = 200) =>
   send(res, status, JSON.stringify(data, (_k, v) => (typeof v === 'bigint' ? v.toString() : v)), { 'content-type': 'application/json; charset=utf-8' });
 
-async function serveStatic(res, file) {
+async function serveStatic(res, file, headers = {}) {
   const full = path.join(PUBLIC, file);
   if (!full.startsWith(PUBLIC)) return send(res, 403, 'forbidden');
   const body = await safe(() => fsp.readFile(full));
   if (!body) return send(res, 404, 'not found');
-  return send(res, 200, body, { 'content-type': MIME[path.extname(full)] || 'application/octet-stream' });
+  return send(res, 200, body, { 'content-type': MIME[path.extname(full).toLowerCase()] || 'application/octet-stream', ...headers });
 }
 
 // ------------------------------------------------------------------ routes ---
@@ -145,6 +148,16 @@ route('/api/map', async (u, res) => {
     kills: pick('kill', 400),
     recent: events.filter((e) => e.actor?.pos).slice(-800).map((e) => ({ kind: e.kind, x: e.actor.pos.x, z: e.actor.pos.z, ts: e.ts, name: e.actor.name })),
   }, redact));
+});
+
+// The extra layers the map tab can put under the markers: drawn ones, whose geometry travels
+// inline because it is a few kilobytes, and pictures, which are fetched by url. Driven by what
+// is actually in public/overlays, so a dropped-in image needs no code change and a deleted one
+// cannot 404.
+route('/api/map/overlays', async (u, res) => {
+  const map = await safe(() => collector.mapData(), { ok: false });
+  const world = map?.world || {};
+  json(res, { ok: true, world: world.world || null, size: world.size || 15360, overlays: await listOverlays(OVERLAYS, world) });
 });
 
 route('/api/missions', async (u, res) => json(res, await collector.missions()));
@@ -329,6 +342,11 @@ function publicSettings() {
 }
 
 // -------------------------------------------------------------------- serve --
+/** A malformed escape is a bad request, not a crash, so it simply matches nothing. */
+function safeDecode(s) {
+  try { return decodeURIComponent(s); } catch { return ''; }
+}
+
 const server = http.createServer(async (req, res) => {
   const started = Date.now();
   try {
@@ -343,6 +361,12 @@ const server = http.createServer(async (req, res) => {
 
     if (u.pathname === '/' || u.pathname === '/index.html') return serveStatic(res, 'index.html');
     if (/^\/[\w.-]+\.(js|css|svg|ico|json|webmanifest)$/.test(u.pathname)) return serveStatic(res, u.pathname.slice(1));
+    // Map overlays. A few hundred kilobytes each and redrawn on every pan, so unlike the rest
+    // of the page they are worth caching - briefly, so that replacing a file still shows up.
+    const overlay = /^\/overlays\/([\w -]+\.[a-z0-9]+)$/i.exec(safeDecode(u.pathname));
+    if (overlay && IMAGE_TYPES[path.extname(overlay[1]).toLowerCase()]) {
+      return serveStatic(res, path.join('overlays', overlay[1]), { 'cache-control': 'public, max-age=300' });
+    }
     return json(res, { error: 'not found', path: u.pathname }, 404);
   } catch (err) {
     console.error(`[status] ${req.url} failed after ${Date.now() - started} ms:`, err);

@@ -147,7 +147,9 @@ export const CHECKS = [
   check('query.players', 'Network', 'Player list query', (s) => {
     const p = s.query.players;
     if (!p?.ok) return { status: WARN, detail: p?.error || 'no answer' };
-    if (p.count && !p.named) return { status: WARN, detail: `${p.count} slots reported but no names - this DayZ build hides them`, hint: 'The admin log is used instead, so the Players tab still fills.' };
+    // Not a warning: DayZ fills this answer with the right number of slots and blank names, so
+    // on a vanilla server it would read "warn" whenever anybody is online.
+    if (p.count && !p.named) return { status: OK, detail: `${p.count} player(s), names left blank - DayZ does that on purpose`, hint: 'The admin log is used instead, so the Players tab still fills.' };
     return { status: OK, detail: `${p.count} player(s), ${p.named} with a name` };
   }),
 

@@ -18,7 +18,7 @@ two game volumes read-only, and asks Docker about the container.
 | **Overview** | State, players, map, version, uptime, next restart, CPU and memory, a 24 hour player chart, who is online, and anything that is failing |
 | **Health** | Every check, grouped, with the reason and what to do about it |
 | **Players** | Online now, everyone the admin log knows, play time, kills, deaths, K/D, longest shot, favourite weapon, and recent sessions |
-| **Map** | Live player positions, deaths, spawn points and contaminated areas, drawn over a settlement map derived from the mission's own data. Pan, zoom and measure distances |
+| **Map** | Live player positions, deaths, spawn points and contaminated areas, drawn over a settlement map derived from the mission's own data. Pan, zoom and measure distances. Overlays - place names, loot tiers, a loot run - switch on over it, and the drawn map switches off under them |
 | **Chat** | In-game chat, searchable |
 | **Events** | Kills, hits, connects, base building and everything else in the admin log, filterable by kind |
 | **Logs** | The container log, the engine `.RPT`, the admin `.ADM`, script logs, and every file in the profiles folder |
@@ -92,10 +92,72 @@ curl -s http://localhost:8093/api/summary
 curl -s http://localhost:8093/metrics
 ```
 
-`/api/health`, `/api/players`, `/api/chat`, `/api/events`, `/api/map`, `/api/missions`,
-`/api/economy`, `/api/mods`, `/api/config`, `/api/storage`, `/api/logs`, `/api/docker`,
-`/api/history`, `/api/query` and `/api/stream` (server-sent events) are all available too.
-Add `?redact=1` to any of them to blank player IDs.
+`/api/health`, `/api/players`, `/api/chat`, `/api/events`, `/api/map`, `/api/map/overlays`,
+`/api/missions`, `/api/economy`, `/api/mods`, `/api/config`, `/api/storage`, `/api/logs`,
+`/api/docker`, `/api/history`, `/api/query` and `/api/stream` (server-sent events) are all
+available too. Add `?redact=1` to any of them to blank player IDs.
+
+## Map overlays
+
+The map itself is drawn from the mission's own `mapgrouppos.xml`, so the page needs no map
+image to work. On top of it, anything in `public/overlays` is offered as a layer that can be
+switched on, faded with its own slider or stacked with the others, and the drawn map can be
+switched off underneath. Three ship with the page, all for Chernarus:
+
+| Layer | What it is |
+| --- | --- |
+| **places** | Named settlements, military sites and landmarks. Cities and towns are labelled at any zoom, villages and landmarks as you go in |
+| **loot tiers** | A coarse sketch of where the vanilla tiers fall: coast low, inland higher, the north-west military sites highest |
+| **loot run** | A suggested circuit through the north-west and back down the east coast, with its loot stops |
+
+All three are **drawn**, not pictures: each is a list of polygons, circles, lines and labelled
+points in world metres, which the page renders in its own palette. Nothing in this repository
+is an image of the map, so there is no map imagery to license, and the whole set is about 6 KB.
+
+The positions were read off a 1 km grid and cross-checked against the fixture towns in
+`test/demo.js`, which disagree by up to about half a kilometre. **Treat every coordinate as
+good to roughly 500 m and no better.** To correct one, switch the `basemap` layer on, see which
+way a label sits off its building cluster and edit the number - the cluster comes from the
+mission's own data and is the thing to trust.
+
+### Editing a drawn layer
+
+Each layer is a JSON file in `public/overlays`, named by `overlays.json`. The four kinds of
+shape can be mixed in one file and all take world metres:
+
+```json
+{
+  "areas":   [{ "label": "Tier 1", "colour": "#4f9d6a", "polygon": [[0, 3600], [2400, 3700]],
+                "labelAt": [11500, 3500] }],
+  "circles": [{ "label": "Tisy", "colour": "#d8a531", "at": [1700, 14100], "radius": 1000 }],
+  "lines":   [{ "label": "north-west run", "colour": "#e8593f", "width": 2.6, "dash": [9, 7],
+                "points": [[1700, 14100], [4000, 10900]] }],
+  "points":  [{ "label": "Gorka", "at": [9320, 9460], "class": "village" }]
+}
+```
+
+`class` on a point decides when its label appears: `city` and `town` always, then `airfield`,
+`military`, `landmark` and `village` as you zoom in. `colour` must be a plain `#rrggbb`. A
+shape the page cannot draw - a polygon with two corners, a circle with no radius - is dropped
+without taking the rest of the layer with it, so a half-finished edit still loads.
+
+### Bringing your own picture
+
+Nothing ships as an image, but the support is there for a terrain render of your own. Drop the
+file in `public/overlays` and it is offered straight away, stretched across the whole world. To
+place it properly, give it an entry in `public/overlays/overlays.json`:
+
+```json
+{ "id": "north-west", "label": "north west", "file": "nw.png", "world": "chernarusplus",
+  "bounds": [7680, 7680, 15360, 15360], "opacity": 0.8, "credit": "who drew it" }
+```
+
+`bounds` is where the image sits in world metres, as `[xWest, zSouth, xEast, zNorth]`, and the
+string `"world"` means the whole square. The image's top row is north. A picture layer also
+gets the shared **dim** slider, which washes it back so the markers on top stay readable.
+
+`world` hides a layer on any other map; leave it out to offer it everywhere. Only use images
+you have the right to serve - the page will happily show anything you put in the folder.
 
 ## Development
 
@@ -135,12 +197,14 @@ status/
     logs.js          log discovery, .RPT header, loaded addons and error classification
     mission.js       missions, types.xml, events.xml, spawn points, effect areas, mods
     world.js         world sizes, map grid, the reconstructed in-game clock
+    overlays.js      the map's extra layers: the folder, the manifest, shapes and bounds
     xml.js           a small tolerant XML reader
     history.js       the player-count time series
     util.js          file reading with size caps, redaction, formatting
     config.js        every setting and its default
   public/            index.html, app.js, map.js, style.css
+    overlays/        map layers: places, loot tiers and a loot run, as world coordinates
   test/
-    run-tests.js     125 checks, no Docker and no Steam account needed
+    run-tests.js     145 checks, no Docker and no Steam account needed
     demo.js          a stand-in DayZ server: fixture volumes plus a real A2S responder
 ```

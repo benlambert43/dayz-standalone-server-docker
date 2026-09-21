@@ -110,7 +110,7 @@ every endpoint is read-only and only `GET` is accepted.
 |---|---|
 | **Health** | About thirty checks in one place: container and supervisor state, the Steam query, disk space, crash dumps, script errors, world saves, and whether the config the server is running still matches the one on disk. Each one says what it means and what to do |
 | **Players** | Who is online, how long they have been on, play time, kills, deaths, K/D, longest shot and favourite weapon, from the server's admin log |
-| **Map** | Live player positions, deaths, spawn points and contaminated areas, drawn over a settlement map built from the mission's own `mapgrouppos.xml`. Pan, zoom, measure distances |
+| **Map** | Live player positions, deaths, spawn points and contaminated areas, drawn over a settlement map built from the mission's own `mapgrouppos.xml`. Pan, zoom, measure distances. Overlays - place names, loot tiers, a loot run - switch on over it, and the drawn map switches off under them |
 | **Chat and events** | In-game chat, the kill feed, connects, hits and base building, searchable and filterable |
 | **Logs** | The container log and every file in the profiles folder, with errors and warnings picked out |
 | **Missions and economy** | Which mission is live, which of your overrides took effect, a file browser, and the whole `types.xml` loot table with search |
