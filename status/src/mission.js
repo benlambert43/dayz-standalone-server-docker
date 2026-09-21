@@ -326,3 +326,15 @@ export function parseServerCfgValues(text) {
     passwordSet: isSet('password'),
   };
 }
+
+/**
+ * How many player IDs a ban.txt, whitelist.txt or priority.txt actually holds.
+ * DayZ ships these files full of // comments explaining how to use them, and an ID may carry
+ * a trailing // comment of its own, so only lines that start with something else count.
+ */
+export function countListEntries(text) {
+  return String(text ?? '')
+    .split(/\r?\n/)
+    .filter((l) => l.trim() && !l.trim().startsWith('//'))
+    .length;
+}

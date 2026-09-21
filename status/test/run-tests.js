@@ -15,7 +15,7 @@ import { redactServerCfg, redactEnvList, human, duration, isSecretKey } from '..
 import { summariseRpt, parseRptHeader, classifyRptLine } from '../src/logs.js';
 import { evaluate } from '../src/health.js';
 import { summariseStats } from '../src/dockerapi.js';
-import { parseServerCfgValues, appManifest, installedMods, modsFromArgs } from '../src/mission.js';
+import { parseServerCfgValues, appManifest, installedMods, modsFromArgs, countListEntries } from '../src/mission.js';
 import fsp from 'node:fs/promises';
 import os from 'node:os';
 import path from 'node:path';
@@ -620,6 +620,21 @@ const EXTRAS = {
     e.config.values.steamQueryPort = '27017';
     assert.equal(run(HEALTHY, e).get('cfg.queryPort').status, 'fail');
   });
+  // DayZ answers Steam queries on a ~50 ms cadence of its own and this figure covers the
+  // challenge and the query, so about 100 ms is what a healthy server on an idle machine
+  // actually reports. It used to be called slow, which left the page permanently "warn".
+  check('the latency a healthy DayZ server really shows is not a warning', () => {
+    const s = clone(HEALTHY);
+    s.query.info = { ...s.query.info, rttMs: 100 };
+    assert.equal(run(s).get('query.latency').status, 'ok');
+  });
+  check('a genuinely slow exchange is still flagged', () => {
+    const s = clone(HEALTHY);
+    s.query.info = { ...s.query.info, rttMs: 450 };
+    assert.equal(run(s).get('query.latency').status, 'warn');
+    s.query.info = { ...s.query.info, rttMs: 1500 };
+    assert.equal(run(s).get('query.latency').status, 'fail');
+  });
   check('weakened signature checking is flagged', () => {
     const e = clone(EXTRAS);
     e.config.values.verifySignatures = '0';
@@ -727,6 +742,34 @@ class Missions
     const mods = modsFromArgs('-config=x -mod=@CF;@BuilderItems -servermod=@AdminTools');
     assert.deepEqual(mods.map((m) => m.name), ['CF', 'BuilderItems', 'AdminTools']);
     assert.equal(mods[2].serverSide, true);
+  });
+
+  // Verbatim from the ban.txt Steam installs: six comment lines and two real bans. Counting
+  // the comments made the page report eight.
+  const shippedBanTxt = [
+    "//Players added to the ban.txt won't be able to connect to this server.",
+    '//Bans can be added/removed while the server is running and will come in effect immediately, kicking the player.',
+    '//-----------------------------------------------------------------------------------------------------',
+    '//To ban a player, add his player ID (44 characters long ID) which can be found in the admin log file (.ADM).',
+    '//-----------------------------------------------------------------------------------------------------',
+    '//For comments use the // prefix. It can be used after an inserted ID, to easily mark it.',
+    '',
+    '76561198120341761',
+    '76561198956764064',
+  ].join('\n');
+  check('a ban list counts IDs, not the comments around them', () => {
+    assert.equal(countListEntries(shippedBanTxt), 2);
+  });
+  check('an ID with a trailing comment still counts once', () => {
+    assert.equal(countListEntries('1111111111112222222222222333333333XXXXXXAAAA\t//Example of a character ID'), 1);
+  });
+  check('a comment-only list is empty, and so is no list at all', () => {
+    assert.equal(countListEntries('//nobody is banned\n\n  \n'), 0);
+    assert.equal(countListEntries(''), 0);
+    assert.equal(countListEntries(null), 0);
+  });
+  check('CRLF line endings count the same', () => {
+    assert.equal(countListEntries('//note\r\n76561198120341761\r\n76561198956764064\r\n'), 2);
   });
 }
 

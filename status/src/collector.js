@@ -297,7 +297,7 @@ export class Collector {
     for (const name of ['ban.txt', 'whitelist.txt', 'priority.txt']) {
       const f = await readCapped(path.join(p.installDir, name), 256 * KB);
       out[name] = f
-        ? { present: true, lines: f.text.split(/\r?\n/).filter((l) => l.trim()).length, mtime: f.mtime }
+        ? { present: true, lines: mission.countListEntries(f.text), mtime: f.mtime }
         : { present: false, lines: 0 };
     }
     return out;

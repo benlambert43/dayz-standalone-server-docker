@@ -228,7 +228,11 @@ password_login() {               # returns 0 when the token is cached now
   rm -f "$LOGIN_SCRIPT"
   (( STOP_REQUESTED )) && exit 0
 
-  if out_has "Waiting for user info\.\.\.OK|Logged in OK" && ! out_has "FAILED \(|ERROR \(|ERROR!"; then
+  # steamcmd writes its progress messages into the line it is already on, so the "OK" that
+  # ends a step can be pushed away from the "..." that starts it. Observed on a real mobile
+  # authenticator login, which this script then called a failure although it had worked:
+  #   Waiting for user info...Waiting for compat in post-logon took: 0.098765sOK
+  if out_has "Waiting for user info\.\.\..*OK|Logged in OK" && ! out_has "FAILED \(|ERROR \(|ERROR!"; then
     banner "STEAM LOGIN CACHED" \
            "Later starts use the cached token and need no password and no phone." \
            "You can now blank STEAM_PASSWORD and STEAM_GUARD_CODE in .env."
@@ -260,9 +264,11 @@ password_login() {               # returns 0 when the token is cached now
       paused_or_hold "THE LOGIN WAS NOT APPROVED IN TIME" \
         "Have the Steam mobile app open, then run:  $RECREATE_CMD" ;;
     *)
-      paused_or_hold "STEAM LOGIN FAILED" \
-        "See the steamcmd lines above for the reason." \
-        "To try again run:  $RECREATE_CMD" ;;
+      # steamcmd printed no error this script knows, so the login may well have worked with
+      # wording it cannot read. Do not hold on a guess: the caller retries with the token and
+      # reports a real failure then, and the marker above still allows only one password login.
+      warn "could not tell from steamcmd's output whether the login worked - trying the cached token"
+      return 0 ;;
   esac
 }
 
@@ -297,11 +303,18 @@ do_update() {
       # This session sent no password and allowed no prompt, so a login-type failure here
       # can only mean that the cached token was rejected, whatever wording Steam chose.
       no_token|invalid_password|guard_needed|bad_code|approval_timeout)
-        if (( IS_ANON || tried_password )); then break; fi
+        if (( IS_ANON )); then break; fi
+        # The password login already ran in this container, and the token it should have left
+        # behind is still not accepted. Say so, instead of blaming the download.
+        if (( tried_password )); then
+          paused_or_hold "STEAM LOGIN FAILED" \
+            "The password login did not leave a usable token. See the steamcmd lines above." \
+            "To try again run:  $RECREATE_CMD"
+        fi
         tried_password=1
-        password_login            # returns only on success
+        password_login            # returns once a token may exist
         skip_delay=1
-        log "token cached - repeating the update with it" ;;
+        log "repeating the update with the cached token" ;;
       no_subscription)
         if (( IS_ANON )); then
           finish hold "STEAM SAYS: NO SUBSCRIPTION" \

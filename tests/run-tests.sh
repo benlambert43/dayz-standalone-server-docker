@@ -51,6 +51,31 @@ check "password never printed"          has_not "$SECRET" "$T/out"
 check "account name never printed"      has_not "someuser" "$T/out"
 check "login script removed"            test ! -e /run/dayz/steam/login.script
 
+echo "2a. the same login, with steamcmd's progress text inside its own 'user info' line"
+# The real tool did this once and the server was held with "STEAM LOGIN FAILED" although the
+# login had worked and the token was cached.
+reset_all; run STEAM_PASSWORD="$SECRET" FAKE_LOGIN=mobile_noisy
+check "status ok"                       is "$(status)" ok
+check "exactly one password login"      is "$(count login)" 1
+check "token-cached banner shown"       has "STEAM LOGIN CACHED" "$T/out"
+check "not reported as a failure"       has_not "STEAM LOGIN FAILED" "$T/out"
+check "server binary installed"         test -x /dayz/server/stable/DayZServer
+
+echo "2b. an unreadable login that really failed: the retry with the token reports it"
+reset_all; run STEAM_PASSWORD="$SECRET" FAKE_LOGIN=silent_fail
+check "status hold"                     is "$(status)" hold
+check "banner names the login"          has "STEAM LOGIN FAILED" /run/dayz/steam/banner
+check "still only one password login"   is "$(count login)" 1
+
+echo "2c. a login whose outcome steamcmd does not spell out, but which worked"
+# Unreadable is not the same as failed: the update retry with the token decides.
+reset_all; run STEAM_PASSWORD="$SECRET" FAKE_LOGIN=silent
+check "status ok"                       is "$(status)" ok
+check "exactly one password login"      is "$(count login)" 1
+check "says the outcome was unreadable" has "could not tell from steamcmd" "$T/out"
+check "not reported as a failure"       has_not "STEAM LOGIN FAILED" "$T/out"
+check "server binary installed"         test -x /dayz/server/stable/DayZServer
+
 echo "3. restart of the same container: up to date => no account login at all"
 run STEAM_PASSWORD="$SECRET"
 check "status ok"                       is "$(status)" ok

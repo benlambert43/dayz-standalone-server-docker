@@ -59,6 +59,20 @@ if [[ $args == *"+runscript"* ]]; then
              echo "Please confirm the login in the Steam Mobile app on your phone."
              echo "Waiting for confirmation..."; echo "Waiting for confirmation...OK"
              echo "Waiting for client config...OK"; echo "Waiting for user info...OK"; : > "$token"; exit 0 ;;
+    # Verbatim from a real mobile-authenticator login: steamcmd printed a progress message
+    # into the line it was on, so the "OK" no longer follows "Waiting for user info...".
+    mobile_noisy)
+             echo "This account is protected by a Steam Guard mobile authenticator."
+             echo "Please confirm the login in the Steam Mobile app on your phone."
+             echo "Waiting for confirmation..."; echo "Waiting for confirmation...OK"
+             echo "Waiting for client config...OK"
+             echo "Waiting for user info...Waiting for compat in post-logon took: 0.098765sOK"
+             : > "$token"; exit 0 ;;
+    # A login whose outcome cannot be read at all: no known success and no known error string.
+    # It worked, so the token is there for the update retry to find.
+    silent)  : > "$token"; exit 0 ;;
+    # The same silence, but the login really did fail, so no token appears.
+    silent_fail) exit 0 ;;
     guard)   printf 'This computer has not been authenticated for your account using Steam Guard.\nSteam Guard code:ERROR (Account Logon Denied)\n'; exit 5 ;;
     badcode) echo "FAILED (Invalid Login Auth Code)"; exit 5 ;;
     invalid) echo "FAILED (Invalid Password)"; exit 5 ;;

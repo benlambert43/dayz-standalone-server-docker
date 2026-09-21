@@ -132,11 +132,16 @@ export const CHECKS = [
     return { status: OK, detail: `${r.count} rules${r.bohemia?.mods?.length ? `, ${r.bohemia.mods.length} mods advertised` : ''}` };
   }),
 
+  // Measured, container to container with no NAT in the way: DayZ answers Steam queries on a
+  // roughly 50 ms cadence of its own, and this figure covers the whole A2S exchange - the
+  // challenge and then the query - so a perfectly healthy server lands near 100 ms. The old
+  // 50 ms budget could therefore never be met, which left the whole page reading "warn"
+  // forever. 300 ms is three exchanges' worth of jitter; past 800 ms the host is struggling.
   check('query.latency', 'Network', 'Query latency', (s) => {
     const rtt = s.query.info?.ok ? s.query.info.rttMs : null;
     if (rtt === null) return { status: UNKNOWN, detail: 'no answer to time' };
-    if (rtt < 50) return { status: OK, detail: `${rtt} ms` };
-    if (rtt < 300) return { status: WARN, detail: `${rtt} ms - slower than a local query should be` };
+    if (rtt < 300) return { status: OK, detail: `${rtt} ms for the challenge and the query` };
+    if (rtt < 800) return { status: WARN, detail: `${rtt} ms - slower than this exchange should be` };
     return { status: FAIL, detail: `${rtt} ms`, hint: 'A loaded host or a saturated WSL2 VM.' };
   }),
 
