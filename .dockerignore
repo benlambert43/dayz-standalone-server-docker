@@ -1,0 +1,4 @@
+# Allowlist: only the container scripts are part of the build context.
+# This keeps .env, config/ and backups out of every image layer.
+*
+!docker/

@@ -1,0 +1,12 @@
+{
+  "name": "dayz-status",
+  "version": "1.0.0",
+  "private": true,
+  "description": "Read-only status page for the DayZ server container",
+  "type": "module",
+  "engines": { "node": ">=20" },
+  "scripts": {
+    "start": "node src/server.js",
+    "test": "node test/run-tests.js"
+  }
+}

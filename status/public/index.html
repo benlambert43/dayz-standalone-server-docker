@@ -1,0 +1,38 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="color-scheme" content="dark light">
+<title>DayZ Server Status</title>
+<link rel="icon" href="favicon.svg" type="image/svg+xml">
+<link rel="stylesheet" href="style.css">
+</head>
+<body>
+<header class="topbar">
+  <div class="brand">
+    <span class="dot" id="live-dot" title="live connection"></span>
+    <div>
+      <h1 id="server-name">DayZ Server Status</h1>
+      <p class="sub" id="server-sub">connecting&hellip;</p>
+    </div>
+  </div>
+  <div class="topstats" id="topstats"></div>
+  <div class="topactions">
+    <button id="privacy" class="ghost" title="Blank player and Steam IDs, for screenshots and streams">IDs shown</button>
+    <button id="refresh" class="ghost" title="Reload every panel now">Refresh</button>
+  </div>
+</header>
+
+<nav class="tabs" id="tabs"></nav>
+
+<main id="view" class="view"><div class="loading">Loading&hellip;</div></main>
+
+<footer class="foot">
+  <span id="foot-left"></span>
+  <span id="foot-right"></span>
+</footer>
+
+<script type="module" src="app.js"></script>
+</body>
+</html>

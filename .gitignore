@@ -1,0 +1,19 @@
+# Secrets and local settings
+scratchpad
+.env
+.env.*
+!.env.example
+
+# Personal server customisations (admin passwords, player IDs, mission edits)
+config/*
+!config/README.md
+!config/mission/
+config/mission/*
+!config/mission/.gitkeep
+
+# Backups people tend to create next to the compose file
+backups/
+*.bak
+*.tar
+*.tar.gz
+*.tgz

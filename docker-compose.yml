@@ -1,0 +1,153 @@
+# DayZ Standalone dedicated server (Bohemia's native Linux build).
+#
+#   1. copy .env.example to .env and fill in STEAM_USERNAME (and STEAM_PASSWORD for the first login)
+#   2. docker-compose up -d
+#   3. docker-compose logs -f        <- shows progress and tells you if your phone is needed
+#   4. http://localhost:8093         <- status page: health, players, map, chat, logs
+#
+# Everything you may want to change lives in .env. This file normally needs no edits.
+
+name: dayz
+
+services:
+  dayz:
+    build: .
+    image: dayz-server:local
+    # Rebuild on every `up -d`. Unchanged inputs: under a second, container untouched.
+    # Changed scripts (for example after `git pull`): rebuilt and recreated automatically.
+    pull_policy: build
+    restart: unless-stopped
+    # Ceiling only. A normal stop takes a few seconds: the supervisor waits until the world
+    # is saved and then ends the server process itself.
+    stop_grace_period: 120s
+
+    environment:
+      # Fails fast with this message when .env is missing - nothing is built or created.
+      STEAM_USERNAME: ${STEAM_USERNAME:?Copy .env.example to .env and set STEAM_USERNAME first (see README.md)}
+      STEAM_PASSWORD: ${STEAM_PASSWORD:-}
+      STEAM_GUARD_CODE: ${STEAM_GUARD_CODE:-}
+      DAYZ_BRANCH: ${DAYZ_BRANCH:-stable}
+      SERVER_NAME: ${SERVER_NAME:-DayZ Docker Server}
+      SERVER_PASSWORD: ${SERVER_PASSWORD:-}
+      ADMIN_PASSWORD: ${ADMIN_PASSWORD:-}
+      SERVER_DESCRIPTION: ${SERVER_DESCRIPTION:-}
+      MAX_PLAYERS: ${MAX_PLAYERS:-60}
+      MISSION: ${MISSION:-dayzOffline.chernarusplus}
+      DISABLE_THIRD_PERSON: ${DISABLE_THIRD_PERSON:-false}
+      DISABLE_CROSSHAIR: ${DISABLE_CROSSHAIR:-false}
+      SERVER_TIME: ${SERVER_TIME:-SystemTime}
+      TIME_ACCELERATION: ${TIME_ACCELERATION:-1}
+      NIGHT_TIME_ACCELERATION: ${NIGHT_TIME_ACCELERATION:-1}
+      PRIORITY_STEAM_IDS: ${PRIORITY_STEAM_IDS:-}
+      RESTART_INTERVAL_HOURS: ${RESTART_INTERVAL_HOURS:-6}
+      LIMIT_FPS: ${LIMIT_FPS:-60}
+      UPDATE_ON_START: ${UPDATE_ON_START:-true}
+      VALIDATE_ON_START: ${VALIDATE_ON_START:-false}
+      MISSIONS_REF: ${MISSIONS_REF:-master}
+      LOG_VERBOSE: ${LOG_VERBOSE:-false}
+      LOG_RETENTION_DAYS: ${LOG_RETENTION_DAYS:-14}
+      EXTRA_ARGS: ${EXTRA_ARGS:-}
+      TZ: ${TZ:-UTC}
+
+    ports:
+      # Host and container numbers must be identical: the server announces its own port to
+      # Steam. Default bridge network on purpose - host networking does not work for inbound
+      # UDP on Docker Desktop for Windows.
+      - "2302-2305:2302-2305/udp"   # game traffic
+      - "27016:27016/udp"           # Steam server browser / launcher queries
+
+    volumes:
+      - server:/dayz/server         # game files managed by steamcmd (about 4 GB)
+      - data:/dayz/data             # YOUR WORLD: persistence, logs, generated config
+      - steam-home:/home/steam      # cached Steam login token
+      - ./config:/config:ro         # optional overrides, see config/README.md
+
+    tmpfs:
+      - /tmp:size=512m,mode=1777
+      - /run/dayz:size=16m,mode=0755
+
+    # Root is only used to fix volume ownership and to switch users; these are the
+    # capabilities that needs. The game server itself runs unprivileged.
+    cap_drop: [ALL]
+    cap_add: [CHOWN, DAC_OVERRIDE, FOWNER, SETGID, SETUID, KILL]
+    security_opt:
+      - no-new-privileges:true
+
+    ulimits:
+      nofile: { soft: 100000, hard: 100000 }
+      core: 0
+
+    logging:
+      driver: json-file
+      options: { max-size: "10m", max-file: "5" }
+
+  # ---------------------------------------------------------------------------------------
+  # Read-only status page. Small Node.js process, no npm dependencies, no write access to
+  # anything: it reads the two game volumes read-only, asks the game server the same Steam
+  # queries a launcher sends, and looks at the Docker API through a read-only socket.
+  # Nothing here can start, stop or change the game server.
+  status:
+    build: ./status
+    image: dayz-status:local
+    pull_policy: build
+    restart: unless-stopped
+    depends_on:
+      - dayz
+    init: true                      # Docker's tini, so Ctrl-C and `docker stop` are instant
+
+    environment:
+      TZ: ${TZ:-UTC}
+      COMPOSE_PROJECT_NAME: dayz
+      DAYZ_HOST: dayz
+      DAYZ_QUERY_PORT: "27016"
+      DAYZ_GAME_PORT: "2302"
+      DAYZ_BRANCH: ${DAYZ_BRANCH:-stable}
+      STATUS_PORT: "8093"
+      STATUS_POLL_SECONDS: ${STATUS_POLL_SECONDS:-20}
+      STATUS_HISTORY_DAYS: ${STATUS_HISTORY_DAYS:-14}
+      # true blanks player and Steam IDs everywhere; the page has a toggle for this too
+      STATUS_REDACT_IDS: ${STATUS_REDACT_IDS:-false}
+      # the only outbound request this stack can make, off by default
+      STATUS_CHECK_STEAM_BUILD: ${STATUS_CHECK_STEAM_BUILD:-false}
+      STATUS_TITLE: ${SERVER_NAME:-DayZ Docker Server}
+
+    ports:
+      # Localhost only: the page shows player IDs, log contents and the container's settings.
+      # Change to 0.0.0.0 in .env to reach it from another PC on the LAN.
+      - "${STATUS_BIND:-127.0.0.1}:8093:8093"
+
+    volumes:
+      - data:/dayz/data:ro          # world, logs, generated config, published server state
+      - server:/dayz/server:ro      # installed game files, missions, economy
+      - ./config:/config:ro         # your overrides, to show which ones are in effect
+      - status:/var/lib/dayz-status # its own small history file
+      # Read-only, and only GET requests are ever sent. Comment this line out to run without
+      # any Docker access: the page then loses container health, CPU/memory and the log tab.
+      - /var/run/docker.sock:/var/run/docker.sock:ro
+
+    # The socket is root-owned. 0 is right for Docker Desktop; on a Linux host set
+    # DOCKER_GID in .env to the gid of the "docker" group (getent group docker).
+    group_add:
+      - "${DOCKER_GID:-0}"
+
+    extra_hosts:
+      # Lets the page send a Steam query the long way round, through the published port on
+      # the host, which is the only way to catch the Docker Desktop UDP forwarding bug.
+      - "host.docker.internal:host-gateway"
+
+    cap_drop: [ALL]
+    security_opt:
+      - no-new-privileges:true
+    read_only: true
+    tmpfs:
+      - /tmp:size=32m,mode=1777
+
+    logging:
+      driver: json-file
+      options: { max-size: "5m", max-file: "3" }
+
+volumes:
+  server:
+  data:
+  steam-home:
+  status:

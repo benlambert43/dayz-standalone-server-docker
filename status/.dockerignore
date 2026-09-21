@@ -1,0 +1,6 @@
+# Only what the running page needs. The tests are mounted at run time instead, the same way
+# the server image handles them.
+test/
+README.md
+node_modules/
+*.log
