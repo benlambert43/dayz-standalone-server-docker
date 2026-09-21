@@ -1,20 +1,25 @@
-
-<img width="2559" height="998" alt="test123" src="https://github.com/user-attachments/assets/70c56103-298f-49cf-b5b8-9052910c01e1" />
-
-<img width="2536" height="1219" alt="test1234" src="https://github.com/user-attachments/assets/3d88116c-36f3-45f4-9dec-a02e9a8a8f9b" />
-
-
 # dayz-standalone-server-docker
-
-A DayZ Standalone dedicated server (Bohemia's native Linux build) that installs, configures
+A DayZ Standalone dedicated server (native Linux build) that installs, configures
 and runs itself with one command, plus a status page that tells you what it is doing.
-Built and tested on Windows 11 with Docker Desktop (WSL2).
+Built and tested on Windows 11 with Docker Desktop (WSL2). You will need to add your own configuration to 
+a .env file to get up and running. See quick start. 
 
 ```bash
 docker-compose up -d
 ```
 
 Then open <http://localhost:8093>.
+
+## Screenshots:
+
+<img width="2559" height="998" alt="test123" src="https://github.com/user-attachments/assets/70c56103-298f-49cf-b5b8-9052910c01e1" />
+
+<img width="2536" height="1219" alt="test1234" src="https://github.com/user-attachments/assets/3d88116c-36f3-45f4-9dec-a02e9a8a8f9b" />
+
+## Motivation: 
+
+I wanted a singleplayer-esque experience that made learning the game and looting a bit easier. This is an easy way to get up and running on the same machine that you are playing on. 
+
 
 ## Quick start
 
