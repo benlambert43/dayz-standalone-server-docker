@@ -331,9 +331,15 @@ export class Collector {
   /** Everything the dashboard shows in one object. Never throws. */
   async snapshot() {
     const [p, q, d, hostQ] = await Promise.all([this.paths(), this.query(), this.dockerState(), this.hostQuery()]);
-    const [people, manifest, rpt, storage, logFiles, startCount] = await Promise.all([
+    const [people, manifest, dataFolders, rpt, storage, logFiles, startCount] = await Promise.all([
       safe(() => this.people(), { online: [], roster: [], rollup: null }),
       safe(() => mission.appManifest(p.installDir, p.appId), null),
+      // Which of the game's separate data folders this install has (see logs.DATA_FOLDERS).
+      safe(async () => {
+        if (!(await exists(p.installDir))) return null;
+        const have = await Promise.all(logs.DATA_FOLDERS.map((f) => exists(path.join(p.installDir, f, 'addons'))));
+        return logs.DATA_FOLDERS.filter((_, i) => have[i]);
+      }, null),
       safe(async () => {
         const f = await logs.newestOfKind(p.profilesDir, 'rpt');
         return f ? logs.readRpt(f.path, { tailBytes: cfg.rptTailBytes }) : null;
@@ -396,10 +402,11 @@ export class Collector {
       },
       build: {
         manifest,
+        dataFolders,
         rpt: rpt ? { version: rpt.header?.version, build: rpt.header?.build, type: rpt.header?.type } : null,
         queryVersion: q.info?.ok ? q.info.version : null,
       },
-      rpt: rpt ? { file: rpt.file, size: rpt.size, mtime: rpt.mtime, counts: rpt.counts, header: rpt.header } : null,
+      rpt: rpt ? { file: rpt.file, size: rpt.size, mtime: rpt.mtime, counts: rpt.counts, header: rpt.header, addons: rpt.addons, dataKicks: rpt.dataKicks } : null,
       storage,
       logs: {
         files: (logFiles || []).length,

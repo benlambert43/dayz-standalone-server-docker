@@ -12,7 +12,7 @@ import { parseAdm, rollup } from '../src/adm.js';
 import * as a2s from '../src/a2s.js';
 import { inGameClock, worldInfo, gridRef } from '../src/world.js';
 import { redactServerCfg, redactEnvList, human, duration, isSecretKey } from '../src/util.js';
-import { summariseRpt, parseRptHeader, classifyRptLine } from '../src/logs.js';
+import { summariseRpt, parseRptHeader, classifyRptLine, parseLoadedAddons, findDataKicks, readRpt } from '../src/logs.js';
 import { evaluate } from '../src/health.js';
 import { summariseStats } from '../src/dockerapi.js';
 import { parseServerCfgValues, appManifest, installedMods, modsFromArgs, countListEntries } from '../src/mission.js';
@@ -490,6 +490,59 @@ section('8. Engine log');
   check('an ordinary line is classified as nothing', () => assert.equal(classifyRptLine('22:58:06 Player connected'), null));
 }
 
+// Lines copied from a real stable 1.29 log. The engine skips sakhal/ without a word when the
+// server's user may not write to the folder, so this list is the only evidence there is.
+const ADDONS_HEAD = [
+  ' 3:16:02 Updating base class Overcast->, by DZ\\worlds\\chernarusplus\\world\\config.bin/CfgWorlds/CAWorld/Weather/Overcast/',
+  ' 3:16:02 ',
+  ' 3:16:02 ==== Loaded addons ====',
+  ' 3:16:02 ',
+  ' 3:16:02 dta/bin.pbo - 120569',
+  ' 3:16:02 addons/worlds_chernarusplus_ce.pbo - 125393',
+  ' 3:16:02 addons/data_bliss.pbo - 120565',
+];
+const ADDONS_SAKHAL = [
+  ' 3:16:02 /dayz/server/stable/sakhal/addons/worlds_sakhal.ebo - 120940',
+  ' 3:16:02 /dayz/server/stable/sakhal/addons/data_sakhal.pbo - 120565',
+];
+const ADDONS_END = [
+  ' 3:16:02 ',
+  ' 3:16:02 =======================',
+  ' 3:16:02 ',
+  " 3:16:04 ANIMATION (E): Can't load sakhal/Anims/cfg/skeletons.anim.xml",
+];
+const KICK_118 = ' 2:46:40 Player Unknown (520938673) kicked from server: 118 (Server installation is corrupt. Missing PBO from game files. (D:\\SteamLibrary\\steamapps\\common\\DayZ\\sakhal\\addons\\data_sakhal.pbo))';
+{
+  const loaded = parseLoadedAddons([...ADDONS_HEAD, ...ADDONS_SAKHAL, ...ADDONS_END].join('\n'));
+  const skipped = parseLoadedAddons([...ADDONS_HEAD, ...ADDONS_END].join('\r\n'));
+  check('counts the loaded addons, .ebo files included', () => assert.equal(loaded.count, 5));
+  check('sees that sakhal/addons was loaded', () => assert.deepEqual(loaded.folders, ['sakhal']));
+  check('sees that it was skipped - the skeleton error after the list does not count', () => {
+    assert.equal(skipped.count, 3);
+    assert.deepEqual(skipped.folders, []);
+    assert.equal(skipped.complete, true);
+  });
+  check('a list that is cut off says so', () => assert.equal(parseLoadedAddons(ADDONS_HEAD.join('\n')).complete, false));
+  check('a log without the list is null, not an empty list', () => assert.equal(parseLoadedAddons('22:58:01 Mission read.'), null));
+
+  const kicks = findDataKicks(['22:58:01 Mission read.', KICK_118, KICK_118, ' 2:50:00 Player Bob (1) kicked from server: 4 (Ping too high)'].join('\n'));
+  check('counts kicks with reason 118 only', () => assert.equal(kicks.count, 2));
+  check('keeps the whole reason, nested brackets included', () => assert.match(kicks.last, /^Server installation is corrupt\..*data_sakhal\.pbo\)$/));
+  check('no kicks is a zero, not a null', () => assert.deepEqual(findDataKicks(''), { count: 0, last: null }));
+}
+await acheck('readRpt finds the list at the head and the kicks at the tail of a real file', async () => {
+  const dir = await fsp.mkdtemp(path.join(os.tmpdir(), 'dayz-status-rpt-'));
+  try {
+    const file = path.join(dir, 'DayZServer_2026-09-21_03-16-00.RPT');
+    const filler = Array.from({ length: 4000 }, (_, i) => ` 3:17:00 Warning Message: No entry 'bin\\config.bin/CfgVehicles/Filler${i}'.`);
+    await fsp.writeFile(file, [...ADDONS_HEAD, ...ADDONS_SAKHAL, ...ADDONS_END, ...filler, KICK_118, ''].join('\n'));
+    const rpt = await readRpt(file, { tailBytes: 64 * 1024 });
+    assert.equal(rpt.truncated, true, 'the fixture must be larger than the tail that is read');
+    assert.deepEqual(rpt.addons.folders, ['sakhal']);
+    assert.equal(rpt.dataKicks.count, 1);
+  } finally { await fsp.rm(dir, { recursive: true, force: true }); }
+});
+
 // ---------------------------------------------------------------- 9. docker --
 section('9. Docker stats');
 {
@@ -542,8 +595,12 @@ const HEALTHY = {
     serverDisk: { free: 60 * 1024 ** 3, total: 200 * 1024 ** 3, usedPct: 70 },
   },
   logs: { crashDumps: 0, newestCrashDump: null },
-  rpt: { mtime: Date.now() - 60_000, counts: {} },
-  build: { manifest: { installed: true, buildId: '20260919', stateFlags: 4, lastUpdated: 1758240000 }, rpt: { version: '1.28.159123' } },
+  rpt: {
+    mtime: Date.now() - 60_000, counts: {},
+    addons: parseLoadedAddons([...ADDONS_HEAD, ...ADDONS_SAKHAL, ...ADDONS_END].join('\n')),
+    dataKicks: findDataKicks(''),
+  },
+  build: { manifest: { installed: true, buildId: '20260919', stateFlags: 4, lastUpdated: 1758240000 }, dataFolders: ['sakhal'], rpt: { version: '1.28.159123' } },
 };
 const EXTRAS = {
   config: {
@@ -654,6 +711,52 @@ const EXTRAS = {
     assert.equal(r.status, 'warn');
     assert.match(r.detail, /hides them/);
   });
+  // The defect this check exists for: every client was kicked, the container was healthy, and
+  // nothing on the page said a word.
+  check('a loaded sakhal/ folder is ok and says how many addons there are', () => {
+    const r = good.get('server.gameData');
+    assert.equal(r.status, 'ok');
+    assert.match(r.detail, /5 addons, including sakhal\/addons/);
+  });
+  check('an installed sakhal/ folder that the engine skipped is a failure with the fix attached', () => {
+    const s = clone(HEALTHY);
+    s.rpt.addons = parseLoadedAddons([...ADDONS_HEAD, ...ADDONS_END].join('\n'));
+    const r = run(s).get('server.gameData');
+    assert.equal(r.status, 'fail');
+    assert.match(r.detail, /sakhal\/ is installed but the engine did not load it/);
+    assert.match(r.hint, /Missing PBO from game files/);
+    assert.match(r.hint, /git pull, then docker-compose up -d/);
+    assert.equal(run(s).h.overall, 'fail');
+  });
+  check('a list that was cut off before sakhal/ could appear is unknown, not a failure', () => {
+    const s = clone(HEALTHY);
+    s.rpt.addons = parseLoadedAddons(ADDONS_HEAD.join('\n'));
+    assert.equal(run(s).get('server.gameData').status, 'unknown');
+  });
+  check('an install without the folder is worth a look', () => {
+    const s = clone(HEALTHY);
+    s.build.dataFolders = [];
+    s.rpt.addons = parseLoadedAddons([...ADDONS_HEAD, ...ADDONS_END].join('\n'));
+    assert.equal(run(s).get('server.gameData').status, 'warn');
+  });
+  check('a kick with reason 118 is a warning that quotes the reason', () => {
+    const s = clone(HEALTHY);
+    s.rpt.dataKicks = findDataKicks(KICK_118);
+    const r = run(s).get('logs.dataKicks');
+    assert.equal(r.status, 'warn');
+    assert.match(r.detail, /1 kick\(s\) with reason 118/);
+    assert.match(r.detail, /Missing PBO from game files/);
+  });
+  check('no .RPT yet, or a server that never ran, is unknown for both', () => {
+    const s = clone(HEALTHY);
+    s.rpt = null;
+    assert.equal(run(s).get('server.gameData').status, 'unknown');
+    assert.equal(run(s).get('logs.dataKicks').status, 'unknown');
+    const never = clone(HEALTHY);
+    never.supervisor = {};
+    assert.equal(run(never).get('server.gameData').status, 'unknown');
+  });
+
   check('an out-of-memory kill is a failure', () => {
     const s = clone(HEALTHY);
     s.docker.dayz.oomKilled = true;

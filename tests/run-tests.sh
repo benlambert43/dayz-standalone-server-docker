@@ -220,6 +220,30 @@ check "booleans are not quoted"        grep -qF '"updates_paused":false' /dayz/d
 check "null is not quoted"             grep -qF '"restart_due_epoch":null' /dayz/data/state/status.json
 rm -rf /dayz/data/state
 
+# The engine loads sakhal/addons only if access("sakhal", R_OK|W_OK) succeeds for the server
+# user, and says nothing when it does not. steamcmd creates the folder as steam:steam 0755, and
+# that once kept every client out: they all load the folder, DLC owner or not, and were kicked
+# with "Server installation is corrupt. Missing PBO from game files (...data_sakhal.pbo)".
+echo "16. game data folders pass the engine's read+write check for the server user"
+as_dayz() { setpriv --reuid=dayz --regid=dayz --init-groups "$@"; }
+(
+  reset_all
+  LOG_TAG=test
+  . /opt/dayz/lib/common.sh
+  resolve_branch
+  mkdir -p "$INSTALL_DIR"/{addons,dta,keys,mpmissions,sakhal/addons}
+  : > "$INSTALL_DIR/sakhal/addons/data_sakhal.pbo"
+  chown -Rh steam:steam "$SERVER_ROOT"; chmod -R go-w "$SERVER_ROOT"
+  share_install_tree
+) > /dev/null 2>&1
+I=/dayz/server/stable
+check "before: a steam-owned folder fails it" as_dayz test ! -w "$I/keys"
+check "sakhal/ passes it"               as_dayz test -r "$I/sakhal" -a -w "$I/sakhal"
+check "install dir and mpmissions/ too" as_dayz test -w "$I" -a -w "$I/mpmissions"
+check "the PBOs stay read-only"         as_dayz test ! -w "$I/sakhal/addons" -a ! -w "$I/sakhal/addons/data_sakhal.pbo"
+check "addons/ and dta/ stay read-only" as_dayz test ! -w "$I/addons" -a ! -w "$I/dta"
+reset_all
+
 echo
 echo "passed: $PASS   failed: $FAIL"
 (( FAIL == 0 ))

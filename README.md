@@ -81,6 +81,26 @@ docker-compose up -d --force-recreate
   Allow. If you clicked Cancel earlier, Windows created Block rules; remove them under
   Windows Defender Firewall, Inbound Rules.
 
+## Playing without any DLC
+
+Nothing needs changing. The default `MISSION=dayzOffline.chernarusplus` is the base game:
+neither the server nor any player needs a DLC for it.
+
+| `MISSION` in `.env` | Map | What players need |
+|---|---|---|
+| `dayzOffline.chernarusplus` | Chernarus | DayZ (default) |
+| `dayzOffline.enoch` | Livonia | DayZ. Livonia has been part of the base game since update 1.25 (May 2024) |
+| `dayzOffline.sakhal` | Sakhal | DayZ **and** the Frostline DLC |
+
+So the only setting to stay away from is `dayzOffline.sakhal`.
+
+The server still downloads a `sakhal/` folder of about 800 MB, and so does every DayZ client,
+whether its owner bought Frostline or not. That is how Bohemia ships the game, not a setting:
+the game loads that folder on every map, and the server checks the files of each joining player
+against its own. Do not delete the folder and do not try to switch it off. A server that has
+not loaded it kicks everybody, DLC or not, with the `Missing PBO from game files` error
+described under [Troubleshooting](#troubleshooting).
+
 ## Status page
 
 <http://localhost:8093> — starts with the stack, needs no configuration, and changes nothing:
@@ -96,13 +116,17 @@ every endpoint is read-only and only `GET` is accepted.
 | **Missions and economy** | Which mission is live, which of your overrides took effect, a file browser, and the whole `types.xml` loot table with search |
 | **Ask the server** | Send the Steam queries by hand and read the raw answer |
 
-Two checks are worth knowing about:
+Three checks are worth knowing about:
 
 - It sends the same Steam query **twice** — once inside Docker and once the long way round
   through the port published on the host. That is the only way to catch the Docker Desktop bug
   in the limitations below, where the server stays healthy but nobody can reach it any more.
 - It compares the **running** server against the config and mission on disk, so a setting that
   needs a restart to take effect shows up as a warning instead of a surprise.
+- It reads the engine's list of **loaded addons**. The engine can skip the `sakhal/` data
+  folder without logging anything, and then every player is kicked while the container stays
+  healthy. "Game data folders loaded" goes red for that, and "No players kicked for server
+  data" shows the kicks themselves.
 
 The page is published on `127.0.0.1` only, because it shows player IDs, log contents and the
 container's settings. `STATUS_BIND=0.0.0.0` in `.env` opens it to the LAN. A toggle in the
@@ -202,6 +226,12 @@ Search the log for the banner title.
 
 The Health tab of the status page shows the same problems with the same wording, plus the ones
 that never reach the log, such as a full disk or a published port that stopped forwarding.
+
+Errors that the game shows to a player instead:
+
+| Message in DayZ | Meaning and fix |
+|---|---|
+| `Warning (0x00040076)` ... `Server installation is corrupt. Missing PBO from game files (...\sakhal\addons\data_sakhal.pbo)` | Despite the file name, this has nothing to do with owning a DLC, and nothing is wrong with the player's game. The server did not load its own `sakhal/` folder, which every client loads. The engine skips that folder without a word unless the server's user may read **and write** the folder itself; older versions of this project left it read-only. Fixed: `git pull`, then `docker-compose up -d`. To check, look at "Game data folders loaded" on the Health tab, or open the newest `.RPT` file in the Logs tab: the list under `Loaded addons` must contain `sakhal/addons/data_sakhal.pbo` |
 
 Never post your `.env`, the output of `docker inspect` or `docker compose config`, or RPT and
 crash dump files in public: they can contain passwords and player IDs.

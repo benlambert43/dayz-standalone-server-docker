@@ -88,11 +88,53 @@ export function summariseRpt(text, { keep = 40 } = {}) {
   return { lines: lines.length, counts, samples, header: parseRptHeader(text) };
 }
 
+// ------------------------------------------------------------ loaded addons --
+// Game data that lives in a folder of its own next to addons/. The engine loads such a folder
+// only if the server's user may read AND write it, and skips it without a single log line
+// otherwise - so the one place that shows it is the list of what was loaded.
+export const DATA_FOLDERS = ['sakhal'];
+
+/**
+ * The "==== Loaded addons ====" block near the top of an .RPT. Returns null when the block
+ * is not in the text at all; `complete` is false when the text ends before the block does.
+ */
+export function parseLoadedAddons(text) {
+  const lines = String(text).split(/\r?\n/);
+  const start = lines.findIndex((l) => l.includes('==== Loaded addons ===='));
+  if (start < 0) return null;
+  const out = { count: 0, complete: false, folders: [] };
+  for (const line of lines.slice(start + 1)) {
+    if (/={20,}\s*$/.test(line)) { out.complete = true; break; }
+    const m = /(\S+\.[pe]bo) - /i.exec(line);
+    if (!m) continue;
+    out.count++;
+    const file = m[1].replace(/\\/g, '/').toLowerCase();
+    for (const f of DATA_FOLDERS) {
+      if (file.includes(`${f}/addons/`) && !out.folders.includes(f)) out.folders.push(f);
+    }
+  }
+  return out;
+}
+
+// Reason 118 is "Server installation is corrupt. Missing PBO from game files": the client
+// loaded a game file that this server did not. The player sees it as their own problem.
+export function findDataKicks(text) {
+  const out = { count: 0, last: null };
+  for (const m of String(text).matchAll(/kicked from server: 118 \((.*)\)\s*$/gm)) {
+    out.count++;
+    out.last = m[1].trim();
+  }
+  return out;
+}
+
 /** The whole RPT picture for one file, size capped at both ends. */
 export async function readRpt(file, { tailBytes = 512 * KB } = {}) {
-  const [head, tail] = await Promise.all([readCapped(file, 16 * KB), readTail(file, tailBytes)]);
+  // The head has to reach past the list of loaded addons: 10 KB on a vanilla server.
+  const [head, tail] = await Promise.all([readCapped(file, 128 * KB), readTail(file, tailBytes)]);
   if (!tail) return null;
   const summary = summariseRpt(tail.text);
   summary.header = parseRptHeader(head ? head.text : tail.text);
+  summary.addons = parseLoadedAddons(head ? head.text : tail.text);
+  summary.dataKicks = findDataKicks(tail.text);
   return { file, size: tail.size, mtime: tail.mtime, truncated: tail.truncated, ...summary };
 }

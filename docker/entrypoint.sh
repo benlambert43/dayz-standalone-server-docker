@@ -108,9 +108,9 @@ fi
 chown -h dayz:dayz "$DATA_ROOT" "$DATA_ROOT"/{config,profiles,storage,battleye,state}
 chmod 0750 "$DATA_ROOT"
 
-# Install tree: owned by steam, readable by everyone, and group-writable for "dayz" only at
-# the top level and in mpmissions/ (DayZServer insists on a writable working directory and
-# the mission working copy is built inside mpmissions/).
+# Install tree: owned by steam, readable by everyone, and group-writable for "dayz" only
+# where share_install_tree (lib/common.sh) says so. That runs after the Steam phase, because
+# on a first start there is nothing here yet.
 if [[ ! -e $INSTALL_DIR/.owner-ok ]]; then
   chown -Rh steam:dayz "$INSTALL_DIR" && : > "$INSTALL_DIR/.owner-ok"
 fi
@@ -182,10 +182,7 @@ case $steam_status in
 esac
 
 # The install tree may have been created or extended by steamcmd just now.
-chown -h steam:dayz "$INSTALL_DIR"; chmod 0775 "$INSTALL_DIR"
-if [[ -d $INSTALL_DIR/mpmissions ]]; then
-  chown -h steam:dayz "$INSTALL_DIR/mpmissions"; chmod 0775 "$INSTALL_DIR/mpmissions"
-fi
+share_install_tree
 
 # ------------------------------------------------------------ 5. server ------
 chown -h dayz:dayz "$RUN_DIR/state"          # run-server.sh keeps this file up to date

@@ -220,6 +220,11 @@ async function generate() {
     'Version 1.28.159123',
     'Allocator: /dayz/server/stable/dta/tbbmalloc.so',
     'PhysMem: 31 GiB, VirtMem : 128 TiB, AvailPhys : 24 GiB',
+    '22:57:42 ==== Loaded addons ====',
+    '22:57:42 dta/bin.pbo - 159109',
+    '22:57:42 addons/worlds_chernarusplus.pbo - 159109',
+    `22:57:42 ${path.join(SERVER, BRANCH, 'sakhal', 'addons', 'data_sakhal.pbo').replace(/\\/g, '/')} - 159109`,
+    '22:57:42 =======================',
     '22:57:55 [CE][Storage] Loading types',
     '22:58:01 Mission read.',
     '22:58:02 Warning Message: No entry .configfile/CfgVehicles.DemoOnly.',
@@ -267,6 +272,8 @@ class Missions
   await write(path.join(MISSION_DIR, 'mapgrouppos.xml'), buildMapGroupPos());
   await write(path.join(MISSION_DIR, 'init.c'), 'void main()\n{\n  // demo fixture mission init\n}\n');
   await write(path.join(SERVER, BRANCH, 'mpmissions', MISSION, 'init.c'), '// vanilla copy\n');
+  // Every real install has this folder, and the health page checks that the engine loaded it.
+  await write(path.join(SERVER, BRANCH, 'sakhal', 'addons', 'data_sakhal.pbo'), 'demo fixture, not a PBO\n');
   await write(path.join(SERVER, BRANCH, 'steamapps', 'appmanifest_223350.acf'), `"AppState"
 {
 	"appid"		"223350"

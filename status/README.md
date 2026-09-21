@@ -36,8 +36,9 @@ two game volumes read-only, and asks Docker about the container.
 - **The Docker API** over a socket mounted read-only — container state, the result of the
   container's own healthcheck, CPU and memory, restart count, port bindings, the container log.
 - **The data volume**, read-only — the admin log (`.ADM`) for chat, kills and positions, the
-  engine log (`.RPT`) for the exact game version and script errors, the generated
-  `serverDZ.cfg`, and the world persistence files.
+  engine log (`.RPT`) for the exact game version, script errors, the list of addons the engine
+  loaded and players it kicked for data it did not load, the generated `serverDZ.cfg`, and the
+  world persistence files.
 - **The game files volume**, read-only — installed missions, the live mission working copy,
   the central economy files, and the Steam app manifest.
 - **A status file** the game container publishes to `data/state/status.json` every 15 seconds.
@@ -131,7 +132,7 @@ status/
     a2s.js           Steam query client: challenge handshake, split packets, Bohemia mod list
     dockerapi.js     Docker Engine API over the unix socket, GET only
     adm.js           admin log parser and the rollups built from it
-    logs.js          log discovery, .RPT header and error classification
+    logs.js          log discovery, .RPT header, loaded addons and error classification
     mission.js       missions, types.xml, events.xml, spawn points, effect areas, mods
     world.js         world sizes, map grid, the reconstructed in-game clock
     xml.js           a small tolerant XML reader
@@ -140,6 +141,6 @@ status/
     config.js        every setting and its default
   public/            index.html, app.js, map.js, style.css
   test/
-    run-tests.js     104 checks, no Docker and no Steam account needed
+    run-tests.js     125 checks, no Docker and no Steam account needed
     demo.js          a stand-in DayZ server: fixture volumes plus a real A2S responder
 ```

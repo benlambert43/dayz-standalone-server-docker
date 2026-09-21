@@ -156,6 +156,26 @@ resolve_branch() {
   INSTALL_DIR=$SERVER_ROOT/$BRANCH
 }
 
+# ---------------------------------------------------------------- install ----
+# share_install_tree  - the few places inside the steam-owned install tree that user "dayz"
+# must be able to write to. Needs root, and INSTALL_DIR from resolve_branch.
+#   * the top level: DayZServer insists on a writable working directory
+#   * mpmissions/:   the mission working copy is built in there
+#   * every data folder that has its own addons/ (sakhal/ today): the engine asks
+#     access(<folder>, R_OK|W_OK) before it loads <folder>/addons, and skips the folder without
+#     a word when the answer is no. Every client loads that folder, whether its owner bought
+#     the DLC or not, so every client is then kicked - on every map - with "Server installation
+#     is corrupt. Missing PBO from game files (...\sakhal\addons\data_sakhal.pbo)".
+#     Only the folder itself is opened up; the PBOs inside stay read-only for "dayz".
+share_install_tree() {
+  local d
+  for d in "$INSTALL_DIR" "$INSTALL_DIR"/mpmissions "$INSTALL_DIR"/*/addons; do
+    [[ -d $d ]] || continue
+    [[ $d == "$INSTALL_DIR"/*/addons ]] && d=${d%/addons}
+    chown -h steam:dayz "$d"; chmod 0775 "$d"
+  done
+}
+
 # ---------------------------------------------------------------- status -----
 # The status sidecar (see status/) runs in its own container and can reach neither this
 # container's tmpfs nor its process table. The handful of facts it cannot obtain from a

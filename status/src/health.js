@@ -95,6 +95,31 @@ export const CHECKS = [
     return { status: WARN, detail: 'not loaded yet' };
   }),
 
+  // Found the hard way: the engine loads sakhal/addons only if the server's user may read AND
+  // write the sakhal/ folder, and skips it without a log line otherwise. Every client loads
+  // that folder on every map, DLC owner or not, and is then kicked with a message that blames
+  // the player's own game. The list of loaded addons is the only place it shows.
+  check('server.gameData', 'Game server', 'Game data folders loaded', (s) => {
+    if (neverRan(s)) return { status: UNKNOWN, detail: 'the server has not run yet' };
+    if (!s.rpt) return { status: UNKNOWN, detail: 'no .RPT file found yet' };
+    const a = s.rpt.addons;
+    const installed = s.build?.dataFolders;
+    if (!a) return { status: UNKNOWN, detail: 'the list of loaded addons is not in the part of the log that was read' };
+    if (!installed) return { status: UNKNOWN, detail: 'install folder not readable' };
+    const skipped = installed.filter((f) => !a.folders.includes(f));
+    if (skipped.length && !a.complete) return { status: UNKNOWN, detail: `the list of loaded addons is cut off after ${a.count} entries` };
+    if (skipped.length) {
+      return {
+        status: FAIL,
+        detail: `${skipped.map((f) => `${f}/`).join(', ')} is installed but the engine did not load it (${a.count} addons, none from ${skipped[0]}/addons)`,
+        hint: 'Every client loads that folder on every map, DLC or not, so every player is kicked with "Missing PBO from game files". '
+          + 'The engine skips it silently unless the server\'s user may write to the folder. git pull, then docker-compose up -d.',
+      };
+    }
+    if (!installed.length) return { status: WARN, detail: `${a.count} addons, but this install has no sakhal/addons folder`, hint: 'Current DayZ clients all load it, so they would be kicked. Set VALIDATE_ON_START=true once.' };
+    return { status: OK, detail: `${a.count} addons, including ${installed.map((f) => `${f}/addons`).join(', ')}` };
+  }),
+
   check('server.updates', 'Game server', 'Steam updates', (s) => {
     if (neverRan(s)) return { status: UNKNOWN, detail: 'the server has not run yet' };
     const st = s.supervisor;
@@ -132,16 +157,22 @@ export const CHECKS = [
     return { status: OK, detail: `${r.count} rules${r.bohemia?.mods?.length ? `, ${r.bohemia.mods.length} mods advertised` : ''}` };
   }),
 
-  // Measured, container to container with no NAT in the way: DayZ answers Steam queries on a
-  // roughly 50 ms cadence of its own, and this figure covers the whole A2S exchange - the
-  // challenge and then the query - so a perfectly healthy server lands near 100 ms. The old
-  // 50 ms budget could therefore never be met, which left the whole page reading "warn"
-  // forever. 300 ms is three exchanges' worth of jitter; past 800 ms the host is struggling.
+  // This is NOT a network measurement, and it is not what a connected player experiences.
+  // Measured on this stack: a bare UDP round trip from the Windows host through the published
+  // port into a container and back is 1.2 ms, while DayZ answers Steam queries on a fixed
+  // ~50 ms cadence of its own - unchanged with -limitFPS at 60, at 120 and removed entirely.
+  // The exchange is two round trips (challenge, then query), so a perfectly healthy server
+  // sits between 50 and 100 ms and the server browser shows about 90. The old 50 ms budget
+  // could never be met, which left the whole page reading "warn" forever. 300 ms is three
+  // exchanges' worth of jitter; past 800 ms the host really is struggling.
   check('query.latency', 'Network', 'Query latency', (s) => {
     const rtt = s.query.info?.ok ? s.query.info.rttMs : null;
+    const floor = "DayZ answers queries on a ~50 ms tick and the browser needs two round trips, "
+      + 'so 50-100 ms is normal here. It is the cost of the query, not of the network, and not '
+      + 'the latency a connected player sees.';
     if (rtt === null) return { status: UNKNOWN, detail: 'no answer to time' };
-    if (rtt < 300) return { status: OK, detail: `${rtt} ms for the challenge and the query` };
-    if (rtt < 800) return { status: WARN, detail: `${rtt} ms - slower than this exchange should be` };
+    if (rtt < 300) return { status: OK, detail: `${rtt} ms for the challenge and the query`, hint: floor };
+    if (rtt < 800) return { status: WARN, detail: `${rtt} ms - slower than this exchange should be`, hint: floor };
     return { status: FAIL, detail: `${rtt} ms`, hint: 'A loaded host or a saturated WSL2 VM.' };
   }),
 
@@ -234,6 +265,17 @@ export const CHECKS = [
     if (!s.rpt) return { status: UNKNOWN, detail: 'no .RPT file' };
     if (!n) return { status: OK, detail: 'none in the part of the log that was read' };
     return { status: WARN, detail: `${n} script error line(s)`, hint: 'Usually a mission override; see the Logs tab.' };
+  }),
+
+  check('logs.dataKicks', 'Logs', 'No players kicked for server data', (s) => {
+    if (!s.rpt) return { status: UNKNOWN, detail: 'no .RPT file' };
+    const k = s.rpt.dataKicks;
+    if (!k?.count) return { status: OK, detail: 'none in the part of the log that was read' };
+    return {
+      status: WARN,
+      detail: `${k.count} kick(s) with reason 118 this run: "${k.last}"`,
+      hint: 'The player loaded a game file that this server did not. Their game is fine; see "Game data folders loaded" above.',
+    };
   }),
 
   check('logs.crashDumps', 'Logs', 'No recent crash dumps', (s) => {
