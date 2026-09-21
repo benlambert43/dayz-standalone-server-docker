@@ -1,4 +1,4 @@
-# dayz-sa-server-docker
+# dayz-standalone-server-docker
 
 A DayZ Standalone dedicated server (Bohemia's native Linux build) that installs, configures
 and runs itself with one command, plus a status page that tells you what it is doing.
